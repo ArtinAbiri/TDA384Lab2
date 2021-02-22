@@ -12,6 +12,7 @@
 % Return an initial state record. This is called from GUI.
 % Do not change the signature of this function.
 initial_state(Nick, GUIAtom, ServerAtom) ->
+  genserver:request(ServerAtom, {nick, Nick}),
   #client_st{
     gui = GUIAtom,
     nick = Nick,
@@ -28,7 +29,8 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-  case catch genserver:request(St#client_st.server, {join, Channel, self()}) of
+  CatchType = (catch genserver:request(St#client_st.server, {join, Channel, self()})),
+  case CatchType of
     join -> {reply, ok, St};
     error -> {reply, {error, user_already_joined, "User is already in this channel"}, St};
     {'EXIT', _} -> {reply, {error, server_not_reached, "Can't reach server"}, St}
@@ -54,7 +56,12 @@ handle(St, {message_send, Channel, Msg}) ->
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
 handle(St, {nick, NewNick}) ->
-  {reply, ok, St#client_st{nick = NewNick}};
+  case catch genserver:request(St#client_st.server, {nick, NewNick}) of
+    ok -> {reply, ok, St#client_st{nick = NewNick}};
+    error -> {reply, {error,nick_used, "nick is already taken"}, St};
+    {'EXIT', _} -> {reply, {error, server_not_reached, "Can't reach server"}, St}
+  end;
+
 
 % ---------------------------------------------------------------------------
 % The cases below do not need to be changed...

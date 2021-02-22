@@ -22,11 +22,13 @@ server_handler(State, Input) ->
   case Input of
 
     {join, Channel, User} ->
-      case list:member(Channel, State#s_state.channels) of
+      case lists:member(Channel, State#s_state.channels) of
+
         true ->
-          case lists:member(User, State#s_state.nicks) of
-            true -> {reply, user_already_joined, State};
-            false -> {reply, join, State#s_state{nicks = [User | State#s_state.nicks]}}
+          CanIJoin = (catch(genserver:request(list_to_atom(Channel),{join,User}))),
+          case CanIJoin of
+            join -> {reply, join, State};
+            error -> {reply, error, State}
           end;
         false ->
           genserver:start(list_to_atom(Channel), #c_state{cName = Channel, members = [User]}, fun channel_handler/2),
@@ -34,34 +36,42 @@ server_handler(State, Input) ->
       end;
 
     {leave, Channel, User} ->
-      case list:member(Channel, State#s_state.channels) of
+      case lists:member(Channel, State#s_state.channels) of
         true ->
-          case lists:member(User, State#s_state.nicks) of
-            true -> {reply, leave, State#s_state{nicks = lists:delete(User, State#s_state.nicks)}};
-            false -> {reply, error, State}
+          CanLeave = (catch (genserver:request(list_to_atom(Channel), {leave, User}))),
+          case CanLeave of
+            leave -> {reply, leave, State};
+            error -> {reply, error, State}
           end;
         false -> {reply, error, State}
       end;
 
-    {nick, newNick} ->
-      case lists:member(newNick, State#s_state.nicks) of
+    {nick, NewNick} ->
+      case lists:member(NewNick, State#s_state.nicks) of
         true -> {reply, error, State};
-        false -> {reply, ok, State#s_state{nicks = [newNick | State#s_state.nicks]}}
-      end;
-    {message_send, Channel, Msg}
-
-
+        false -> {reply, ok, State#s_state{nicks = [NewNick | State#s_state.nicks]}}
+      end
   end.
 
 channel_handler(State, Input) ->
   case Input of
+
+    {join, User} ->
+      case lists:member(User, State#c_state.members) of
+        true -> {reply, error, State};
+        false -> {reply, join, State#c_state{members = [User | State#c_state.members]}}
+      end;
+
     {leave, User} ->
-      case list:member(User, State#c_state.members) of
+      case lists:member(User, State#c_state.members) of
         true -> {reply, leave, State#c_state{members = lists:delete(User, State#c_state.members)}};
         false -> {reply, error, State}
-
       end
 
+   % {message_send, Msg, Nick, User} ->
+     % case lists:member(User, State#c_state.members) of
+       % true -> {reply, message_send, }
+      %end
   end.
 
 
@@ -69,6 +79,5 @@ channel_handler(State, Input) ->
 % together with any other associated processes
 stop(ServerAtom) ->
   genserver:stop(ServerAtom).
-% TODO Implement function
 % Return ok
 
