@@ -29,7 +29,7 @@ server_handler(State, Input) ->
             false -> {reply, join, State#s_state{nicks = [User | State#s_state.nicks]}}
           end;
         false ->
-          genserver:start(list_to_atom(Channel), #c_state{cName = Channel, members = [User]}, fun server_handler/2),
+          genserver:start(list_to_atom(Channel), #c_state{cName = Channel, members = [User]}, fun channel_handler/2),
           {reply, join, State#s_state{channels = [Channel | State#s_state.channels]}}
       end;
 
@@ -43,11 +43,25 @@ server_handler(State, Input) ->
         false -> {reply, error, State}
       end;
 
-    {changeNick, newNick} ->
+    {nick, newNick} ->
       case lists:member(newNick, State#s_state.nicks) of
         true -> {reply, error, State};
         false -> {reply, ok, State#s_state{nicks = [newNick | State#s_state.nicks]}}
+      end;
+    {message_send, Channel, Msg}
+
+
+  end.
+
+channel_handler(State, Input) ->
+  case Input of
+    {leave, User} ->
+      case list:member(User, State#c_state.members) of
+        true -> {reply, leave, State#c_state{members = lists:delete(User, State#c_state.members)}};
+        false -> {reply, error, State}
+
       end
+
   end.
 
 
