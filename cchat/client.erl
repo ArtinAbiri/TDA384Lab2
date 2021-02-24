@@ -12,7 +12,6 @@
 % Return an initial state record. This is called from GUI.
 % Do not change the signature of this function.
 initial_state(Nick, GUIAtom, ServerAtom) ->
-  genserver:request(ServerAtom, {nick, Nick}),
   #client_st{
     gui = GUIAtom,
     nick = Nick,
@@ -29,25 +28,25 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-  CatchType = (catch genserver:request(St#client_st.server, {join, Channel, self()})),
-  case CatchType of
+  case (catch genserver:request(St#client_st.server, {join, Channel, self(), St#client_st.nick})) of
     join -> {reply, ok, St};
     error -> {reply, {error, user_already_joined, "User is already in this channel"}, St};
     {'EXIT', _} -> {reply, {error, server_not_reached, "Can't reach server"}, St}
-
   end;
 
 % Leave channel
 handle(St, {leave, Channel}) ->
+
   case catch genserver:request(St#client_st.server, {leave, Channel, self()}) of
     leave -> {reply, ok, St};
     error -> {reply, {error, user_not_joined, "User is not in this channel"}, St};
-    {'EXIT', _} -> {reply, {error, server_not_reached, "Can't reach server"}, St}
+    {'EXIT', {badarg,_}} -> {reply, ok, St};
+      {'EXIT', "Timeout"} -> {reply, {error, server_not_reached, "Can't reach server"}, St}
   end;
 
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-  case catch genserver:request(list_to_atom(Channel), {message_send, Msg, nick, self()}) of
+  case catch genserver:request(list_to_atom(Channel), {message_send, St#client_st.nick, Msg, self()}) of
     message_send -> {reply, ok, St};
     error -> {reply, {error, user_not_joined, "User is not in this channel"}, St};
     {'EXIT', _} -> {reply, {error, server_not_reached, "Can't reach server"}, St}
@@ -56,10 +55,11 @@ handle(St, {message_send, Channel, Msg}) ->
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
 handle(St, {nick, NewNick}) ->
-  case catch genserver:request(St#client_st.server, {nick, NewNick}) of
+  case catch genserver:request(St#client_st.server, {nick,St#client_st.nick, NewNick}) of
     ok -> {reply, ok, St#client_st{nick = NewNick}};
-    error -> {reply, {error,nick_used, "nick is already taken"}, St};
-    {'EXIT', _} -> {reply, {error, server_not_reached, "Can't reach server"}, St}
+    error -> {reply, {error,nick_taken, "nick is already taken"}, St};
+    {'EXIT', {badarg,_}} -> {reply, ok, St};
+    {'EXIT', "Timeout"} -> {reply, {error, server_not_reached, "Can't reach server"}, St}
   end;
 
 
